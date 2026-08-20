@@ -716,10 +716,45 @@ def user_page(friend_code: str):
     try:
         network = name_to_network_type(request.args.get('network'))
 
-        friend_code_int = int(friend_code.replace('-', ''))
-        user_data = get_presence(friend_code_int, network, False)
-        if user_data['Exception'] or not user_data['User']['username']:
-            raise Exception(user_data['Exception'])
+        friend_code = str(int(friend_code.replace('-', ''))).zfill(12)
+        # Look the friend up directly instead of going through get_presence, so
+        # the profile still renders from cached data even when one of the networks is offline.
+        result = db.session.scalar(
+            select(Friend)
+            .where(Friend.friend_code == friend_code)
+            .where(Friend.network == network)
+        )
+        if not result or not result.username:
+            raise Exception('Friend not found')
+
+        presence = {}
+        if result.online:
+            presence = {
+                'titleID': result.title_id,
+                'updateID': result.upd_id,
+                'joinable': result.joinable,
+                'gameDescription': result.game_description,
+                'game': getTitle(result.title_id, titles_to_uid, title_database),
+            }
+        mii = result.mii
+        if mii:
+            mii = MiiData().mii_studio_url(mii)
+        user_data = {
+            'Exception': False,
+            'User': {
+                'principalId': friend_code_to_principal_id(friend_code),
+                'friendCode': friend_code,
+                'online': result.online,
+                'Presence': presence,
+                'username': result.username,
+                'message': result.message,
+                'mii': mii,
+                'accountCreation': result.account_creation,
+                'lastAccessed': result.last_accessed,
+                'lastOnline': result.last_online,
+                'favoriteGame': result.favorite_game,
+            }
+        }
     except:
         return render_template('dist/404.html')
 
