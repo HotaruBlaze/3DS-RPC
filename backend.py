@@ -2,7 +2,7 @@
 # Based from NintendoClients' `examples/3ds/friends.py`
 import datetime
 import traceback
-from typing import List
+from typing import List, Optional
 from datetime import datetime as dt
 
 from nintendo import nasc
@@ -85,6 +85,9 @@ class QueriedFriend:
 	# When the user was last seen online
 	last_online: int
 
+	# The friend's username, per database (None until their profile is scraped).
+	username: Optional[str]
+
 	def __init__(self, given_friend: Friend):
 		self.friend_code = given_friend.friend_code
 		self.pid = friend_code_to_principal_id(given_friend.friend_code)
@@ -92,6 +95,7 @@ class QueriedFriend:
 		self.account_creation = given_friend.account_creation
 		self.online = given_friend.online
 		self.last_online = given_friend.last_online
+		self.username = given_friend.username
 
 
 async def main():
@@ -435,8 +439,13 @@ async def main_friends_loop(friends_client: friends.FriendsClientV1, session: Se
 	pending_updates: List[dict] = []
 	for current_friend in added_friends:
 		# As this is a time-heavy task, only update if necessary.
+		
+		# A friend with no username yet has never had their profile scraped, so
+		# fetch it on the first loop they're processed instead of waiting for the
+		# last_accessed throttle (which active 3DS polling defeats by refreshing
+		# last_accessed on every request).
 		work: bool = False
-		if time.time() - current_friend.last_accessed >= 600 or scrape_only:
+		if time.time() - current_friend.last_accessed >= 600 or scrape_only or current_friend.username is None:
 			work = True
 
 		if not work:
