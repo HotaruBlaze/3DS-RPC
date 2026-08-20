@@ -36,6 +36,11 @@ MISSING_STRIKE_LIMIT = 3
 # Consecutive loops each friend has been absent from the remote friendlist.
 _missing_strikes: dict[tuple, int] = {}
 
+# Newly registered consoles are inserted with `online=False`, so without this
+# they'd be classified as "offline" and only enter the rotation every
+# OFFLINE_CHECK_INTERVAL loops.
+NEW_USER_PRIORITY_WINDOW = 30 * 60  # 30 minutes since account_creation
+
 # Whether we've already wiped the remote friendlist for this backend run.
 _startup_wipe_done: bool = False
 
@@ -71,6 +76,9 @@ class QueriedFriend:
 	# The last access date of this user, per database.
 	last_accessed: int
 	
+	# When the account was created, per database.
+	account_creation: int
+	
 	# Whether the user is currently online
 	online: bool
 	
@@ -81,6 +89,7 @@ class QueriedFriend:
 		self.friend_code = given_friend.friend_code
 		self.pid = friend_code_to_principal_id(given_friend.friend_code)
 		self.last_accessed = given_friend.last_accessed
+		self.account_creation = given_friend.account_creation
 		self.online = given_friend.online
 		self.last_online = given_friend.last_online
 
@@ -124,6 +133,8 @@ async def main():
 		
 		for friend in all_friends:
 			if friend.online and (current_time - friend.last_online <= OFFLINE_THRESHOLD):
+				online_queue.append(friend)
+			elif current_time - friend.account_creation <= NEW_USER_PRIORITY_WINDOW:
 				online_queue.append(friend)
 			else:
 				offline_queue.append(friend)
