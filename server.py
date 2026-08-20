@@ -6,11 +6,16 @@ from flask_migrate import Migrate
 from flask_sqlalchemy import SQLAlchemy
 from werkzeug.middleware.proxy_fix import ProxyFix
 import sys, datetime, xmltodict, pickle, secrets
+from urllib.parse import urlencode
 
 from sqlalchemy import select, update, insert, delete
 
 from api.love2 import *
 from api.private import CLIENT_ID, CLIENT_SECRET, HOST
+try:
+    from api.private import DISCORD_SCOPE
+except ImportError:
+    DISCORD_SCOPE = 'activities.write'
 from api.public import PRETENDO_BOT_FC, NINTENDO_BOT_FC
 from api.networks import NetworkType, name_to_network_type
 from api.metrics import init_db
@@ -641,7 +646,16 @@ def register_page():
 # Connection page
 @app.route('/connect')
 def connect():
-    return render_template('dist/connect.html', data={'local': local})
+    data = {
+        'local': local,
+        'authorize_url': 'https://discord.com/oauth2/authorize?' + urlencode({
+            'client_id': CLIENT_ID,
+            'response_type': 'code',
+            'redirect_uri': '%s/authorize' % HOST,
+            'scope': DISCORD_SCOPE,
+        }),
+    }
+    return render_template('dist/connect.html', data=data)
 
 
 @app.route('/discord')
