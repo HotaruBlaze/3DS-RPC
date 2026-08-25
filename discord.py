@@ -221,6 +221,13 @@ class APIClient:
 delay = 2
 
 while True:
+	# End the previous loop's transaction and drop the session's identity map
+	# so the SELECTs below read freshly-committed rows (e.g. users/consoles added
+	# or toggled by the web frontend while this process was already running)
+	# instead of stale, cached objects from an earlier loop.
+	session.rollback()
+	session.expire_all()
+
 	# First, refresh all OAuth2 bearer tokens if necessary.
 	all_users = session.scalars(select(DiscordTable)).all()
 	for oauth_user in all_users:

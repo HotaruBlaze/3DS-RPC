@@ -118,7 +118,14 @@ async def main():
 	while True:
 		time.sleep(1)
 		timestamp = dt.now().strftime('%Y-%m-%d %H:%M:%S')
-		
+
+		# End the previous loop's transaction and drop the session's identity map
+		# so the SELECT below reads freshly-committed rows (e.g. users added by the
+		# web frontend while this backend was already running) instead of stale,
+		# cached objects from an earlier loop.
+		session.rollback()
+		session.expire_all()
+
 		queried_friends = session.scalars(select(Friend).where(Friend.network == network)).all()
 		if not queried_friends:
 			record_loop_start(0, network)
