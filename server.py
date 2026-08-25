@@ -731,9 +731,14 @@ def user_page(friend_code: str):
         network = name_to_network_type(request.args.get('network'))
 
         friend_code_int = int(friend_code.replace('-', ''))
+        # Register the friend immediately so the backend starts scraping their
+        # profile as soon as possible, rather than only once a console reports it.
+        create_user(friend_code_int, network, True)
         user_data = get_presence(friend_code_int, network, False)
-        if user_data['Exception'] or not user_data['User']['username']:
+        if user_data['Exception']:
             raise Exception(user_data['Exception'])
+        if not user_data['User']['username']:
+            user_data['User']['username'] = 'Awaiting first sync'
     except:
         return render_template('dist/404.html')
 
