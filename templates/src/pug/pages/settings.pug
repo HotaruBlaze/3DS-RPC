@@ -19,6 +19,17 @@ block content
                   location.reload();
                 }
             }
+            function copyKey() {
+                navigator.clipboard.writeText(document.getElementById('apiKeyInput').value);
+            }
+            function regenerateKey() {
+                var xmlHttp = new XMLHttpRequest();
+                xmlHttp.open( "POST", "/api/regenerate-key/", false );
+                xmlHttp.send();
+                if (xmlHttp.responseText.length > 0) {
+                    location.reload();
+                }
+            }
 
         .d-flex.justify-content-center
             .col-12
@@ -40,3 +51,12 @@ block content
                                 input.form-check-input#smallImage(type = 'checkbox' role = 'switch' onchange = 'update(this)' autocomplete = 'off')
                                 html {% endif %}
                                 label.form-check-label(for = 'smallImage') Show a small image of your Mii to Discord?
+                .card.mt-3
+                    .card-header
+                        b API Key
+                    .card-body
+                        p.text-muted.small Use this key in your 3DS-RPC client to authenticate your console(s). Keep it secret - anyone with this key can fetch your presence.
+                        .input-group
+                            input#apiKeyInput.form-control(type = 'text' value = '{{ data["apiKey"] }}' readonly)
+                            button.btn.btn-primary(type = 'button' onclick = 'copyKey()') Copy
+                            button.btn.btn-secondary(type = 'button' onclick = 'regenerateKey()') Regenerate
