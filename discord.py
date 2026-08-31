@@ -295,6 +295,7 @@ while True:
 				)
 			)
 			.where(DiscordFriends.active)
+			.where(DiscordTable.rpc_enabled)
 	).all()
 
 	if len(discord_rows) < 1:
