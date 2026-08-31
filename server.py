@@ -589,6 +589,7 @@ def settings():
 
     data['profileButton'] = result.show_profile_button
     data['smallImage'] = result.show_small_image
+    data['rpcEnabled'] = result.rpc_enabled
     data['apiKey'] = result.api_key
 
     response = make_response(render_template('dist/settings.html', data=data))
@@ -1051,12 +1052,14 @@ def regenerate_key():
 @limiter.limit(toggler_limit)
 def settings_toggler(which: str):
     toggle = bool(int(request.data.decode('utf-8')))
-    if not which in ('smallImage', 'profileButton'):
+    if not which in ('smallImage', 'profileButton', 'rpcEnabled'):
         return 'failure!'
     if which == 'smallImage':
         which = 'show_small_image'
-    else:
+    elif which == 'profileButton':
         which = 'show_profile_button'
+    else:
+        which = 'rpc_enabled'
     try:
         db.session.execute(
             update(Discord)

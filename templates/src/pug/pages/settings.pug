@@ -51,6 +51,14 @@ block content
                                 input.form-check-input#smallImage(type = 'checkbox' role = 'switch' onchange = 'update(this)' autocomplete = 'off')
                                 html {% endif %}
                                 label.form-check-label(for = 'smallImage') Show a small image of your Mii to Discord?
+                            br
+                            .form-check.form-switch
+                                html {% if data['rpcEnabled'] %}
+                                input.form-check-input#rpcEnabled(type = 'checkbox' role = 'switch' onchange = 'update(this)' checked autocomplete = 'off')
+                                html {% else %}
+                                input.form-check-input#rpcEnabled(type = 'checkbox' role = 'switch' onchange = 'update(this)' autocomplete = 'off')
+                                html {% endif %}
+                                label.form-check-label(for = 'rpcEnabled') Allow 3DS-RPC to set Discord RPC?
                 .card.mt-3
                     .card-header
                         b API Key

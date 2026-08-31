@@ -91,6 +91,7 @@ class Discord(Base):
     generation_date: Mapped[int] = mapped_column("generation_date", BigInteger(), nullable=False)
     show_profile_button: Mapped[bool] = mapped_column("show_profile_button", nullable=False, default=True)
     show_small_image: Mapped[bool] = mapped_column("show_small_image", nullable=False, default=True)
+    rpc_enabled: Mapped[bool] = mapped_column("rpc_enabled", nullable=False, default=True)
     api_key: Mapped[str] = mapped_column("api_key", String(32), nullable=False)
 
 
