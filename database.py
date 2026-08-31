@@ -3,7 +3,7 @@ from typing import Optional
 
 from sqlalchemy import create_engine, delete
 from sqlalchemy.orm import DeclarativeBase, mapped_column, Mapped, Session
-from sqlalchemy.types import DateTime, Integer, TypeDecorator, BigInteger
+from sqlalchemy.types import DateTime, Integer, String, TypeDecorator, BigInteger
 import sys
 
 from api.networks import NetworkType
@@ -91,6 +91,7 @@ class Discord(Base):
     generation_date: Mapped[int] = mapped_column("generation_date", BigInteger(), nullable=False)
     show_profile_button: Mapped[bool] = mapped_column("show_profile_button", nullable=False, default=True)
     show_small_image: Mapped[bool] = mapped_column("show_small_image", nullable=False, default=True)
+    api_key: Mapped[str] = mapped_column("api_key", String(32), nullable=False)
 
 
 def start_db_time(uptime: Optional[datetime.datetime], network_type: NetworkType):

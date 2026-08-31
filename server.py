@@ -5,7 +5,7 @@ from flask_limiter.util import get_remote_address
 from flask_migrate import Migrate
 from flask_sqlalchemy import SQLAlchemy
 from werkzeug.middleware.proxy_fix import ProxyFix
-import sys, datetime, xmltodict, pickle, secrets
+import sys, json, datetime, xmltodict, pickle, secrets
 from urllib.parse import urlencode
 
 from sqlalchemy import select, update, insert, delete
@@ -61,7 +61,7 @@ API_ENDPOINT: str = 'https://discord.com/api/v10'
 
 local = False
 port = 2277
-version = 0.31
+version = (0, 32)
 agent = '3DS-RPC/'
 
 frontend_uptime = datetime.datetime.now()
@@ -89,6 +89,7 @@ user_presence_limit = '3/minute'
 new_user_limit = '2/minute'
 cdn_limit = '60/minute'
 toggler_limit = '5/minute'
+console_list_limit = '3/minute'
 
 # Database files
 title_database = []
@@ -297,7 +298,8 @@ def create_discord_user(code: str, response: dict = None):
             rpc_session_token=None,
             site_session_token=token,
             last_accessed=0,
-            generation_date=time.time()
+            generation_date=time.time(),
+            api_key=secrets.token_hex(16)
         ))
         db.session.commit()
     except Exception as e:
@@ -397,11 +399,39 @@ def sidenav():
 
 def user_agent_check():
     user_agent = request.headers['User-Agent']
+    if not user_agent.startswith(agent):
+        raise Exception('this client is invalid')
     try:
-        if float(user_agent.replace(agent, '')) != version:
-            raise Exception('client is not v%s' % version)
+        client_version = tuple(int(x) for x in user_agent[len(agent):].split('.'))
     except:
         raise Exception('this client is invalid')
+    if client_version < version:
+        raise Exception('this client is outdated! please update to v%s' % '.'.join(map(str, version)))
+
+
+def console_api_key() -> str:
+    """Returns the console API key sent by the client, if any."""
+    return request.headers.get('X-API-KEY') or request.args.get('api_key') or ''
+
+
+def verify_console_key(friend_code: int, network: NetworkType, api_key: str) -> bool:
+    """True if the key's owner has this console (friend code/network) linked."""
+    if not api_key:
+        return False
+
+    discord_user = db.session.scalar(
+        select(Discord).where(Discord.api_key == api_key)
+    )
+    if not discord_user:
+        return False
+
+    stmt = (
+        select(DiscordFriends)
+        .where(DiscordFriends.id == discord_user.id)
+        .where(DiscordFriends.friend_code == str(friend_code).zfill(12))
+        .where(DiscordFriends.network == network)
+    )
+    return db.session.scalar(stmt) is not None
 
 
 def get_presence(friend_code: int, network: NetworkType, is_api: bool):
@@ -409,6 +439,10 @@ def get_presence(friend_code: int, network: NetworkType, is_api: bool):
         if is_api:
             # First, run 3DS-RPC client checks.
             user_agent_check()
+
+            # Require a valid console API key for API access.
+            if not verify_console_key(friend_code, network, console_api_key()):
+                raise Exception('invalid console API key')
 
             # Create a user for this friend code, or update its last access date.
             # TODO(spotlightishere): This should be restructured!
@@ -555,6 +589,7 @@ def settings():
 
     data['profileButton'] = result.show_profile_button
     data['smallImage'] = result.show_small_image
+    data['apiKey'] = result.api_key
 
     response = make_response(render_template('dist/settings.html', data=data))
     return response
@@ -779,8 +814,6 @@ def terms():
 @limiter.limit(new_user_limit)
 def new_user(friend_code: int, network: int = -1, user_check: bool = True):
     try:
-        if user_check:
-            user_agent_check()
         if network == -1:
             network = NetworkType.NINTENDO
 
@@ -788,7 +821,16 @@ def new_user(friend_code: int, network: int = -1, user_check: bool = True):
                 request_arg = request.data.decode('utf-8').split(',')[0]
                 network = name_to_network_type(request_arg)
             except:
-                pass            
+                pass
+        network = NetworkType(network)
+
+        if user_check:
+            user_agent_check()
+
+            # Require a valid console API key for API access.
+            if not verify_console_key(friend_code, network, console_api_key()):
+                raise Exception('invalid console API key')
+
         create_user(friend_code, network, True)
         return {
             'Exception': False,
@@ -813,6 +855,69 @@ def user_presence(friend_code: int):
         network = NetworkType.NINTENDO
 
     return get_presence(friend_code, network, True)
+
+
+# Get the currently-active console for the authenticated user
+@app.route('/api/user/activeConsoles', methods=['GET'])
+@limiter.limit(console_list_limit)
+def active_consoles():
+    discord_user = db.session.scalar(
+        select(Discord).where(Discord.api_key == console_api_key())
+    )
+    if not discord_user:
+        return {
+            'Exception': {
+                'Error': 'invalid console API key',
+            }
+        }
+
+    consoles = []
+    for friend_code, active, network_type in get_connected_consoles(discord_user.id):
+        # Only the single currently-active console is returned to the client.
+        if not active:
+            continue
+        network = NetworkType(network_type)
+        result = db.session.scalar(
+            select(Friend)
+            .where(Friend.friend_code == friend_code)
+            .where(Friend.network == network)
+        )
+        if not result:
+            continue
+
+        presence = {}
+        if result.online:
+            presence = {
+                'titleID': result.title_id,
+                'updateID': result.upd_id,
+                'joinable': result.joinable,
+                'gameDescription': result.game_description,
+                'game': getTitle(result.title_id, titles_to_uid, title_database),
+            }
+
+        mii = result.mii
+        if mii:
+            mii = MiiData().mii_studio_url(mii)
+
+        consoles.append({
+            'friendCode': friend_code.zfill(12),
+            'network': network.lower_name(),
+            'active': active,
+            'online': result.online,
+            'username': result.username,
+            'message': result.message,
+            'mii': mii,
+            'Presence': presence,
+            'lastAccessed': result.last_accessed,
+            'lastOnline': result.last_online,
+            'accountCreation': result.account_creation,
+            'favoriteGame': result.favorite_game,
+        })
+
+    return {
+        'Exception': False,
+        'consoles': consoles,
+    }
 
 
 # Toggle
@@ -923,6 +1028,22 @@ def deleter(friend_code: int):
         )
     db.session.commit()
     return 'success!'
+
+
+# Regenerate the logged-in user's API key
+@app.route('/api/regenerate-key/', methods=['POST'])
+@limiter.limit(toggler_limit)
+def regenerate_key():
+    discord_user = user_from_token(request.cookies['token'])
+    new_key = secrets.token_hex(16)
+
+    db.session.execute(
+        update(Discord)
+        .where(Discord.id == discord_user.id)
+        .values(api_key=new_key)
+    )
+    db.session.commit()
+    return new_key
 
 
 # Toggle one
