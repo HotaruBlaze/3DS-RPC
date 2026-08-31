@@ -5,11 +5,12 @@ from api.love2 import *
 from api.private import CLIENT_ID, CLIENT_SECRET, HOST
 from api.networks import NetworkType
 
-from sqlalchemy import create_engine, select, update, delete
+from sqlalchemy import create_engine, select, update, delete, and_
 from sqlalchemy.orm import Session
 from database import get_db_url, DiscordFriends, Friend
 from database import Discord as DiscordTable
 from dataclasses import dataclass
+from functools import lru_cache
 from requests.exceptions import HTTPError
 
 API_ENDPOINT: str = 'https://discord.com/api/v10'
@@ -18,6 +19,13 @@ with open('./cache/databases.dat', 'rb') as file:
 	t = pickle.loads(file.read())
 	titleDatabase = t[0]
 	titlesToUID = t[1]
+
+@lru_cache(maxsize=None)
+def cached_get_title(title_id: str) -> dict:
+	"""Cached wrapper around getTitle, which does expensive linear scans
+	over the title database on every call. Results are shared and must be
+	treated as read-only (callers already share them in the original code)."""
+	return getTitle(title_id, titlesToUID, titleDatabase)
 
 engine = create_engine(get_db_url())
 
@@ -274,25 +282,28 @@ while True:
 	time.sleep(delay)
 
 	# Finally, we'll refresh presences for all remaining users.
-	discord_friends = session.scalars(select(DiscordFriends).where(DiscordFriends.active)).all()
+	# Fetch active Discord connections together with their account and friend
+	# rows in a single query instead of issuing per-friend SELECTs (N+1).
+	discord_rows = session.execute(
+		select(DiscordFriends, DiscordTable, Friend)
+			.join(DiscordTable, DiscordTable.id == DiscordFriends.id)
+			.join(
+				Friend,
+				and_(
+					Friend.friend_code == DiscordFriends.friend_code,
+					Friend.network == DiscordFriends.network,
+				)
+			)
+			.where(DiscordFriends.active)
+	).all()
 
-	if len(discord_friends) < 1:
+	if len(discord_rows) < 1:
 		time.sleep(delay)
 		continue
 
-	for discord_friend in discord_friends:
+	for discord_friend, discord_user, friend_data in discord_rows:
 		# If we've updated this user within the past minute, there's no need to update again.
-		discord_user = session.scalar(select(DiscordTable).where(DiscordTable.id == discord_friend.id))
 		if time.time() - discord_user.last_accessed < 60:
-			continue
-
-		# If this user has no friend data, we cannot process them.
-		friend_data: Friend = session.scalar(
-			select(Friend)
-			.where(Friend.friend_code == discord_friend.friend_code)
-			.where(Friend.network == discord_friend.network)
-		)
-		if not friend_data:
 			continue
 
 		api_client = APIClient(discord_user)
@@ -321,7 +332,7 @@ while True:
 
 		try:
 			friend_code = str(principal_id_to_friend_code(principal_id)).zfill(12)
-			title_data = getTitle(friend_data.title_id, titlesToUID, titleDatabase)
+			title_data = cached_get_title(friend_data.title_id)
 
 			discord_user_data = UserData(
 				friend_code=friend_code,
