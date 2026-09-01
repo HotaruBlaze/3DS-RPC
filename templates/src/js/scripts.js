@@ -28,6 +28,14 @@ function deleteLogin() {
     location.reload();
 }
 
+var sidebarToggle = document.getElementById('sidebarToggle');
+if (sidebarToggle) {
+  sidebarToggle.addEventListener('click', function (event) {
+    event.preventDefault();
+    document.body.classList.toggle('sb-sidenav-toggled');
+  });
+}
+
 var account = document.getElementById('accountDropdown')
 var nav = document.getElementById('navbarDropdown')
 const token = getCookie('token');
